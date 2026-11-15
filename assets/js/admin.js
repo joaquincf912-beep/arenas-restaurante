@@ -361,7 +361,7 @@
     reader.onload = function () {
       var image = new Image();
       image.onload = function () {
-        var max = 1400;
+        var max = 1000;
         var scale = Math.min(1, max / Math.max(image.width, image.height));
         var canvas = document.createElement("canvas");
         canvas.width = Math.round(image.width * scale);
@@ -369,8 +369,8 @@
         var ctx = canvas.getContext("2d");
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
         var type = "image/webp";
-        var data = canvas.toDataURL(type, 0.82);
-        if (!/^data:image\/webp/i.test(data)) data = canvas.toDataURL("image/jpeg", 0.84);
+        var data = canvas.toDataURL(type, 0.78);
+        if (!/^data:image\/webp/i.test(data)) data = canvas.toDataURL("image/jpeg", 0.8);
         done(data);
       };
       image.onerror = function () {
