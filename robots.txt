@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /admin.html
 
-Sitemap: https://joaquincf912-beep.github.io/arenas-grill-bar/sitemap.xml
+Sitemap: https://joaquincf912-beep.github.io/arenas-restaurante/sitemap.xml
