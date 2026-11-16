@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
-Disallow: /admin.html
+Disallow: /arenas-restaurante/admin.html
 
 Sitemap: https://joaquincf912-beep.github.io/arenas-restaurante/sitemap.xml
