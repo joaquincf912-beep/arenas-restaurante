@@ -2806,3 +2806,33 @@ a.contact-card:hover {
     padding-left: 61px;
   }
 }
+
+/* ---------------- Rendimiento de pintado ---------------- */
+/* Las tarjetas y fotos fuera de pantalla no se pintan hasta que se
+   acercan: el scroll deja de recalcular todo el documento. */
+.signature-card,
+.gallery figure {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 340px;
+}
+
+@media (max-width: 980px) {
+  /* El desenfoque de las barras fijas se recompone en cada scroll. */
+  .masthead,
+  .category-bar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(246, 239, 227, 0.99);
+  }
+
+  .signature-tag {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(27, 16, 11, 0.9);
+  }
+
+  .gallery figure img,
+  .course-photo img {
+    transition: none;
+  }
+}

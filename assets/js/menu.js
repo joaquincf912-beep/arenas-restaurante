@@ -791,13 +791,25 @@
     renderCart();
   }
 
-  function syncCloud() {
-    if (!window.ArenasCloud || !window.ArenasCloud.enabled()) return;
+  function pullCloud() {
     window.ArenasCloud.load().then(function (result) {
       if (!result || !result.state) return;
       if (result.updatedAt && result.updatedAt === cloudUpdatedAt) return;
       cloudUpdatedAt = result.updatedAt || "";
       applyCloudState(result.state);
+    });
+  }
+
+  /* Cada pocos segundos se pregunta solo por la marca de tiempo (unos
+     pocos bytes). El menú completo se descarga únicamente si cambió. */
+  function syncCloud() {
+    if (!window.ArenasCloud || !window.ArenasCloud.enabled()) return;
+    if (!cloudUpdatedAt) {
+      pullCloud();
+      return;
+    }
+    window.ArenasCloud.revision().then(function (rev) {
+      if (rev && rev !== cloudUpdatedAt) pullCloud();
     });
   }
 
@@ -811,10 +823,10 @@
   syncMode();
   bindEvents();
   setupScrollSpy();
-  syncCloud();
+  pullCloud();
 
   window.setInterval(renderStatus, 60 * 1000);
-  window.setInterval(syncCloud, 30 * 1000);
+  window.setInterval(syncCloud, 15 * 1000);
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) syncCloud();
   });

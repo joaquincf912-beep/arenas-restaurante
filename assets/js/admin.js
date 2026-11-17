@@ -74,15 +74,30 @@
   }
 
   function scheduleCloudSave() {
-    if (!cloudEnabled() || !window.ArenasCloud.session()) return;
+    if (!cloudEnabled()) return;
+
+    if (!window.ArenasCloud.session()) {
+      setCloudStatus(
+        "Cambios guardados solo en este navegador. Entra con tu cuenta de Supabase para publicarlos en todos los dispositivos.",
+        "error"
+      );
+      return;
+    }
+
     clearTimeout(cloudTimer);
     cloudTimer = setTimeout(function () {
+      setCloudStatus("Publicando cambios…");
       window.ArenasCloud.save(state)
         .then(function () {
-          setCloudStatus("Cambios publicados en el menú.", "ok");
+          var stamp = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" });
+          setCloudStatus("Publicado a las " + stamp + " · ya se ve en todos los dispositivos.", "ok");
         })
         .catch(function (error) {
-          setCloudStatus(error.message || "No se pudo publicar en la nube.", "error");
+          setCloudStatus(
+            (error.message || "No se pudo publicar en la nube.") +
+              " Los cambios quedaron solo en este navegador.",
+            "error"
+          );
         });
     }, 900);
   }

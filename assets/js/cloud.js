@@ -145,6 +145,29 @@
       });
   }
 
+  /* Consulta muy liviana: solo la marca de tiempo del menú publicado.
+     Sirve para no descargar el menú completo cuando no ha cambiado. */
+  function revision() {
+    if (!enabled()) return Promise.resolve(null);
+    var url =
+      base +
+      "/rest/v1/menu_prices?key=eq." +
+      encodeURIComponent(MENU_KEY) +
+      "&select=updated_at&limit=1";
+    return fetch(url, { headers: { apikey: anon }, cache: "no-store" })
+      .then(function (res) {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then(function (rows) {
+        if (!Array.isArray(rows) || !rows.length) return null;
+        return rows[0].updated_at || "";
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+
   function save(state) {
     if (!enabled()) return Promise.reject(new Error("Supabase no está configurado."));
     return rest("menu_prices?on_conflict=key", {
@@ -157,6 +180,7 @@
   window.ArenasCloud = {
     enabled: enabled,
     load: load,
+    revision: revision,
     save: save,
     signIn: signIn,
     signOut: signOut,
