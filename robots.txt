@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
-Disallow: /arenas-restaurante/admin.html
+Disallow: /domicilios-arenas/admin.html
 
-Sitemap: https://joaquincf912-beep.github.io/arenas-restaurante/sitemap.xml
+Sitemap: https://www.traccionweb.com/domicilios-arenas/sitemap.xml
