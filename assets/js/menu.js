@@ -792,6 +792,7 @@
   }
 
   function pullCloud() {
+    if (!window.ArenasCloud || !window.ArenasCloud.enabled()) return;
     window.ArenasCloud.load().then(function (result) {
       if (!result || !result.state) return;
       if (result.updatedAt && result.updatedAt === cloudUpdatedAt) return;
