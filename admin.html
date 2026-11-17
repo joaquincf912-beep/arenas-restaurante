@@ -4,14 +4,13 @@
     <meta charset="utf-8" />
     <script>
       (function () {
-        var path = location.pathname;
-        if (path === "/domicilios-arenas" || path.indexOf("/domicilios-arenas/") === 0) {
-          var base = document.createElement("base");
-          base.href = "/domicilios-arenas/";
-          document.head.appendChild(base);
+        if (location.hostname === "joaquincf912-beep.github.io") {
+          var rest = location.pathname.replace(/^\/arenas-restaurante/, "");
+          location.replace("https://www.traccionweb.com/domicilios-arenas" + rest + location.search + location.hash);
         }
       })();
     </script>
+    <base href="/domicilios-arenas/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Administración · Arenas Grill Bar</title>
     <meta name="robots" content="noindex, nofollow" />
