@@ -63,14 +63,54 @@
     if (!cloudEnabled()) {
       setCloudStatus("Supabase no está configurado en este sitio.", "error");
       $("#cloudForm").hidden = true;
+      $("#cloudPublish").hidden = true;
       return;
     }
     var session = window.ArenasCloud.session();
     var logged = Boolean(session && session.access_token);
     $("#cloudForm").hidden = logged;
     $("#cloudLogout").hidden = !logged;
+    $("#cloudPublish").hidden = !logged;
     if (logged) setCloudStatus("Conectado como " + (session.email || "administrador") + ".", "ok");
     else setCloudStatus("Sin sesión. Entra para publicar los cambios en todos los dispositivos.");
+  }
+
+  /* Publica el menú completo en Supabase. Es lo mismo que ocurre solo
+     después de cada cambio, pero aquí se puede forzar a mano. */
+  var publishing = null;
+
+  function publishNow(quiet) {
+    if (!cloudEnabled()) return Promise.reject(new Error("Supabase no está configurado en este sitio."));
+
+    if (!window.ArenasCloud.session()) {
+      setCloudStatus(
+        "Cambios guardados solo en este navegador. Entra con tu cuenta de Supabase para publicarlos en todos los dispositivos.",
+        "error"
+      );
+      return Promise.reject(new Error("Sin sesión de Supabase."));
+    }
+
+    if (publishing) return publishing;
+
+    setCloudStatus("Publicando el menú en la nube…");
+    publishing = window.ArenasCloud.save(state)
+      .then(function () {
+        var stamp = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" });
+        setCloudStatus("Publicado a las " + stamp + " · ya se ve en todos los dispositivos.", "ok");
+        if (!quiet) toast("Menú publicado en la nube");
+      })
+      .catch(function (error) {
+        setCloudStatus(
+          (error.message || "No se pudo publicar en la nube.") +
+            " Los cambios quedaron solo en este navegador.",
+          "error"
+        );
+      })
+      .then(function () {
+        publishing = null;
+      });
+
+    return publishing;
   }
 
   function scheduleCloudSave() {
@@ -86,19 +126,7 @@
 
     clearTimeout(cloudTimer);
     cloudTimer = setTimeout(function () {
-      setCloudStatus("Publicando cambios…");
-      window.ArenasCloud.save(state)
-        .then(function () {
-          var stamp = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" });
-          setCloudStatus("Publicado a las " + stamp + " · ya se ve en todos los dispositivos.", "ok");
-        })
-        .catch(function (error) {
-          setCloudStatus(
-            (error.message || "No se pudo publicar en la nube.") +
-              " Los cambios quedaron solo en este navegador.",
-            "error"
-          );
-        });
+      publishNow(true);
     }, 900);
   }
 
@@ -118,6 +146,15 @@
         if (result && result.state) {
           applyRemote(result, quiet);
           if (!window.ArenasCloud.session()) setCloudStatus("Menú leído desde Supabase. Entra para editarlo.", "ok");
+        } else if (window.ArenasCloud.session()) {
+          /* Primer guardado: solo se publica si se confirmó que la nube está
+             vacía, para no pisar un menú existente por un fallo de lectura. */
+          window.ArenasCloud.revision().then(function (rev) {
+            if (rev === "__none__") publishNow(true);
+            else if (rev === null) {
+              setCloudStatus("No se pudo comprobar la nube. Revisa la conexión o pulsa «Publicar ahora».", "error");
+            }
+          });
         } else {
           setCloudStatus("Aún no hay un menú publicado en la nube.");
         }
@@ -817,6 +854,10 @@
         .catch(function (error) {
           setCloudStatus(error.message || "No se pudo entrar a la nube.", "error");
         });
+    });
+
+    $("#cloudPublish").addEventListener("click", function () {
+      publishNow(false);
     });
 
     $("#cloudLogout").addEventListener("click", function () {

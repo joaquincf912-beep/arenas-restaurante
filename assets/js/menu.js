@@ -810,7 +810,7 @@
       return;
     }
     window.ArenasCloud.revision().then(function (rev) {
-      if (rev && rev !== cloudUpdatedAt) pullCloud();
+      if (rev && rev !== "__none__" && rev !== cloudUpdatedAt) pullCloud();
     });
   }
 

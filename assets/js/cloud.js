@@ -160,7 +160,8 @@
         return res.json();
       })
       .then(function (rows) {
-        if (!Array.isArray(rows) || !rows.length) return null;
+        if (!Array.isArray(rows)) return null;
+        if (!rows.length) return "__none__";
         return rows[0].updated_at || "";
       })
       .catch(function () {
