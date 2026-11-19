@@ -242,6 +242,168 @@
     });
   }
 
+  /* ---------------- Canal en vivo (Supabase Realtime) ----------------
+     Abre un WebSocket contra Realtime y avisa al instante cuando la fila
+     del menú cambia. Si la red o la CSP lo impiden, se abandona sin
+     romper nada: el sondeo periódico sigue funcionando como respaldo. */
+  var live = false;
+  var socket = null;
+  var ref = 0;
+  var retry = null;
+  var heartbeat = null;
+  var backoff = 1500;
+  var blocked = false;
+  var failures = 0;
+
+  function wsUrl() {
+    return base.replace(/^http/, "ws") + "/realtime/v1/websocket?apikey=" + encodeURIComponent(anon) + "&vsn=1.0.0";
+  }
+
+  function push(message) {
+    if (!socket || socket.readyState !== 1) return;
+    try {
+      socket.send(JSON.stringify(message));
+    } catch (err) {
+      /* socket cerrado a medio envío */
+    }
+  }
+
+  function stopHeartbeat() {
+    if (heartbeat) clearInterval(heartbeat);
+    heartbeat = null;
+  }
+
+  function shutdown() {
+    stopHeartbeat();
+    if (retry) clearTimeout(retry);
+    retry = null;
+    var current = socket;
+    socket = null;
+    live = false;
+    if (current) {
+      try {
+        current.onclose = null;
+        current.close();
+      } catch (err) {
+        /* ya estaba cerrado */
+      }
+    }
+  }
+
+  function retryLater() {
+    if (blocked || retry || document.hidden) return;
+    retry = setTimeout(function () {
+      retry = null;
+      connect();
+    }, backoff);
+    backoff = Math.min(backoff * 2, 30000);
+  }
+
+  function connect() {
+    if (socket && socket.readyState <= 1) return;
+    if (socket) {
+      try {
+        socket.close();
+      } catch (err) {
+        /* ya estaba cerrado */
+      }
+      socket = null;
+    }
+    if (retry) {
+      clearTimeout(retry);
+      retry = null;
+    }
+    try {
+      socket = new WebSocket(wsUrl());
+    } catch (err) {
+      blocked = true;
+      socket = null;
+      return;
+    }
+
+    socket.onopen = function () {
+      backoff = 1500;
+      failures = 0;
+      ref += 1;
+      push({
+        topic: "realtime:menu_prices",
+        event: "phx_join",
+        payload: {
+          config: {
+            broadcast: { ack: false, self: false },
+            presence: { key: "" },
+            postgres_changes: [{ event: "*", schema: "public", table: "menu_prices" }],
+            private: false
+          }
+        },
+        ref: String(ref),
+        join_ref: String(ref)
+      });
+      stopHeartbeat();
+      heartbeat = setInterval(function () {
+        ref += 1;
+        push({ topic: "phoenix", event: "heartbeat", payload: {}, ref: String(ref) });
+      }, 25000);
+    };
+
+    socket.onmessage = function (event) {
+      var message;
+      try {
+        message = JSON.parse(event.data);
+      } catch (err) {
+        return;
+      }
+      if (message.event === "postgres_changes") {
+        live = true;
+        listeners.forEach(function (fn) {
+          try {
+            fn();
+          } catch (err) {
+            /* un oyente falló, los demás siguen */
+          }
+        });
+      } else if (message.event === "phx_reply" && message.payload) {
+        if (message.payload.status === "ok") live = true;
+        else if (message.topic === "realtime:menu_prices") {
+          /* Suscripción rechazada: se deja el sondeo como respaldo. */
+          live = false;
+          shutdown();
+          blocked = true;
+        }
+      }
+    };
+
+    socket.onclose = function () {
+      stopHeartbeat();
+      socket = null;
+      live = false;
+      failures += 1;
+      /* Tras varios intentos fallidos se deja de insistir (red o CSP) y
+         el sondeo periódico se encarga de mantener el menú al día. */
+      if (failures >= 4) {
+        blocked = true;
+        return;
+      }
+      retryLater();
+    };
+
+    socket.onerror = function () {
+      /* Si el navegador no permite el WebSocket (CSP), no insistir. */
+      if (!socket || socket.readyState === 3) return;
+    };
+  }
+
+  function realtime(onChange) {
+    if (!enabled() || !("WebSocket" in window)) return;
+    if (typeof onChange === "function") listeners.push(onChange);
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) shutdown();
+      else connect();
+    });
+    window.addEventListener("online", connect);
+    connect();
+  }
+
   window.ArenasCloud = {
     enabled: enabled,
     load: load,
@@ -251,6 +413,10 @@
     signOut: signOut,
     notifyChange: notifyChange,
     onChange: onChange,
+    realtime: realtime,
+    live: function () {
+      return live;
+    },
     session: function () {
       return session;
     }

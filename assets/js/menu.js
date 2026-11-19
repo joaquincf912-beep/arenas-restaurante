@@ -850,6 +850,13 @@
     window.ArenasCloud.onChange(function () {
       pullCloud(true);
     });
+    /* El canal en vivo pide el menú en cuanto Supabase avisa de un cambio.
+       Si no está disponible, el sondeo de abajo cubre el hueco. */
+    if (window.ArenasCloud.realtime) {
+      window.ArenasCloud.realtime(function () {
+        pullCloud(true);
+      });
+    }
   }
 
   /* ---------------- Arranque ---------------- */
@@ -866,8 +873,17 @@
 
   listenLive();
 
+  /* Con el canal en vivo conectado basta un repaso de seguridad cada
+     minuto; sin él se consulta cada REVISION_MS. */
+  var ticks = 0;
+
   window.setInterval(renderStatus, 60 * 1000);
-  window.setInterval(syncCloud, REVISION_MS);
+  window.setInterval(function () {
+    ticks += 1;
+    var every = window.ArenasCloud && window.ArenasCloud.live && window.ArenasCloud.live() ? 12 : 1;
+    if (ticks % every !== 0) return;
+    syncCloud();
+  }, REVISION_MS);
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) syncCloud();
   });
