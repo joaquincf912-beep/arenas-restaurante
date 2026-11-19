@@ -145,7 +145,7 @@
       .then(function () {
         dirty = false;
         var stamp = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" });
-        setCloudStatus("Todo guardado · última publicación " + stamp + ".", "ok");
+        setCloudStatus("Todo guardado · última publicación: " + stamp, "ok");
         flashBar("Guardado · ya se ve en todos los teléfonos");
         if (window.ArenasCloud.notifyChange) window.ArenasCloud.notifyChange();
       })
