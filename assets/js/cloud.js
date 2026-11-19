@@ -217,6 +217,13 @@
   }
 
   function notifyChange() {
+    /* Aviso por el canal en vivo, además del aviso local entre pestañas. */
+    if (socket && socket.readyState === 1) {
+      sendBroadcast();
+    } else if (!blocked) {
+      pendingBroadcast = true;
+      connect();
+    }
     var stamp = String(Date.now());
     var busChannel = bus();
     if (busChannel) {
@@ -254,6 +261,9 @@
   var backoff = 1500;
   var blocked = false;
   var failures = 0;
+  var pendingBroadcast = false;
+  var lastAnnounce = 0;
+  var TOPIC = "realtime:arenas-menu";
 
   function wsUrl() {
     return base.replace(/^http/, "ws") + "/realtime/v1/websocket?apikey=" + encodeURIComponent(anon) + "&vsn=1.0.0";
@@ -271,6 +281,32 @@
   function stopHeartbeat() {
     if (heartbeat) clearInterval(heartbeat);
     heartbeat = null;
+  }
+
+  function announce() {
+    /* Freno simple: un aviso repetido en el mismo segundo no aporta. */
+    var now = Date.now();
+    if (now - lastAnnounce < 1200) return;
+    lastAnnounce = now;
+    live = true;
+    listeners.forEach(function (fn) {
+      try {
+        fn();
+      } catch (err) {
+        /* un oyente falló, los demás siguen */
+      }
+    });
+  }
+
+  function sendBroadcast() {
+    if (!socket || socket.readyState !== 1) return;
+    ref += 1;
+    push({
+      topic: TOPIC,
+      event: "broadcast",
+      payload: { type: "broadcast", event: "menu-updated", payload: { at: Date.now() } },
+      ref: String(ref)
+    });
   }
 
   function shutdown() {
@@ -326,13 +362,12 @@
       failures = 0;
       ref += 1;
       push({
-        topic: "realtime:menu_prices",
+        topic: TOPIC,
         event: "phx_join",
         payload: {
           config: {
             broadcast: { ack: false, self: false },
             presence: { key: "" },
-            postgres_changes: [{ event: "*", schema: "public", table: "menu_prices" }],
             private: false
           }
         },
@@ -353,18 +388,18 @@
       } catch (err) {
         return;
       }
-      if (message.event === "postgres_changes") {
-        live = true;
-        listeners.forEach(function (fn) {
-          try {
-            fn();
-          } catch (err) {
-            /* un oyente falló, los demás siguen */
-          }
-        });
+      if (message.event === "broadcast") {
+        if (message.payload && message.payload.event === "menu-updated") announce();
+      } else if (message.event === "postgres_changes") {
+        announce();
       } else if (message.event === "phx_reply" && message.payload) {
-        if (message.payload.status === "ok") live = true;
-        else if (message.topic === "realtime:menu_prices") {
+        if (message.payload.status === "ok") {
+          live = true;
+          if (pendingBroadcast) {
+            pendingBroadcast = false;
+            sendBroadcast();
+          }
+        } else if (message.topic === TOPIC) {
           /* Suscripción rechazada: se deja el sondeo como respaldo. */
           live = false;
           shutdown();
