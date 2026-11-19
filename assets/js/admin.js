@@ -11,6 +11,10 @@
   var editingId = null;
   var cloudTimer = null;
   var cloudLoaded = false;
+  /* Hay cambios hechos en este dispositivo que todavía no están en la nube. */
+  var dirty = false;
+  /* El dueño eligió editar sin sesión: se avisa en grande y no se publica. */
+  var offline = false;
 
   var $ = function (selector, root) {
     return (root || document).querySelector(selector);
@@ -43,8 +47,41 @@
       toast("No se pudo guardar en este navegador");
       return false;
     }
+    dirty = true;
     scheduleCloudSave();
     return true;
+  }
+
+  /* ---------------- Barra de estado de publicación ---------------- */
+  function setBar(kind, message, actionLabel) {
+    var bar = $("#publishBar");
+    var text = $("#publishText");
+    var action = $("#publishAction");
+    if (!bar || !text || !action) return;
+    bar.dataset.state = kind;
+    text.textContent = message;
+    if (actionLabel) {
+      action.textContent = actionLabel;
+      action.hidden = false;
+    } else {
+      action.hidden = true;
+    }
+  }
+
+  function updateBar() {
+    if (offline) {
+      setBar("err", "Modo sin conexión: los cambios NO salen de este teléfono.", "Entrar");
+      return;
+    }
+    if (!window.ArenasCloud || !window.ArenasCloud.enabled()) {
+      setBar("err", "Supabase no está configurado en este sitio: los cambios no se publican.", "");
+      return;
+    }
+    if (!window.ArenasCloud.session()) {
+      setBar("warn", "Sin sesión de Supabase: los cambios NO salen de este teléfono.", "Entrar");
+      return;
+    }
+    setBar("ok", "Conectado con Supabase · todo lo que edites se publica en todos los teléfonos.", "");
   }
 
   /* ---------------- Sincronización con Supabase ---------------- */
@@ -99,18 +136,23 @@
     }
 
     setCloudStatus("Publicando el menú en la nube…");
+    setBar("busy", "Publicando en Supabase…", "");
     publishing = window.ArenasCloud.save(state)
       .then(function () {
+        dirty = false;
         var stamp = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" });
         setCloudStatus("Publicado a las " + stamp + " · ya se ve en todos los dispositivos.", "ok");
+        setBar("ok", "Publicado a las " + stamp + " · ya se ve en todos los teléfonos.", "");
         if (!quiet) toast("Menú publicado en la nube");
         if (window.ArenasCloud.notifyChange) window.ArenasCloud.notifyChange();
       })
       .catch(function (error) {
-        setCloudStatus(
-          (error.message || "No se pudo publicar en la nube.") +
-            " Los cambios quedaron solo en este navegador.",
-          "error"
+        var message = error.message || "No se pudo publicar en la nube.";
+        setCloudStatus(message + " Los cambios quedaron solo en este navegador.", "error");
+        setBar(
+          "err",
+          "NO publicado: " + message + " El cambio quedó solo en este teléfono.",
+          window.ArenasCloud.session() ? "Reintentar" : "Entrar"
         );
       })
       .then(function () {
@@ -127,11 +169,17 @@
   function scheduleCloudSave() {
     if (!cloudEnabled()) return;
 
-    if (!window.ArenasCloud.session()) {
+    if (!window.ArenasCloud.session() || offline) {
       setCloudStatus(
         "Cambios guardados solo en este navegador. Entra con tu cuenta de Supabase para publicarlos en todos los dispositivos.",
         "error"
       );
+      updateBar();
+      /* Aviso después del toast de "guardado" de cada acción. */
+      clearTimeout(persist.warnTimer);
+      persist.warnTimer = setTimeout(function () {
+        toast("SIN PUBLICAR · el cambio quedó solo en este teléfono");
+      }, 140);
       return;
     }
 
@@ -194,11 +242,14 @@
   /* ---------------- Sesión ---------------- */
   function showApp() {
     $("#loginScreen").hidden = true;
+    var connect = $("#connectScreen");
+    if (connect) connect.hidden = true;
     $("#app").hidden = false;
     $("#logoutBtn").hidden = false;
     renderAll();
     renderCloud();
-    if (!cloudLoaded) {
+    updateBar();
+    if (!cloudLoaded && !offline) {
       cloudLoaded = true;
       loadCloud(true);
     }
@@ -208,6 +259,35 @@
     $("#loginScreen").hidden = false;
     $("#app").hidden = true;
     $("#logoutBtn").hidden = true;
+  }
+
+  /* Pantalla obligatoria antes de editar cuando no hay sesión de Supabase. */
+  function showConnect() {
+    var email = $("#connectEmail");
+    if (email && !email.value) {
+      var session = window.ArenasCloud && window.ArenasCloud.session();
+      if (session && session.email) email.value = session.email;
+    }
+    $("#loginScreen").hidden = true;
+    $("#app").hidden = true;
+    $("#logoutBtn").hidden = true;
+    $("#connectScreen").hidden = false;
+    var error = $("#connectError");
+    if (error) error.hidden = true;
+    if (email) email.focus();
+  }
+
+  function afterSignIn() {
+    offline = false;
+    renderCloud();
+    if (dirty) {
+      /* Había cambios sin publicar: se suben los de este dispositivo. */
+      publishNow(false);
+    } else {
+      cloudLoaded = true;
+      loadCloud(false);
+    }
+    updateBar();
   }
 
   /* ---------------- Estadísticas ---------------- */
@@ -611,7 +691,11 @@
         }
         $("#loginError").hidden = true;
         $("#pin").value = "";
-        showApp();
+        if (window.ArenasCloud && window.ArenasCloud.enabled() && !window.ArenasCloud.session()) {
+          showConnect();
+        } else {
+          showApp();
+        }
       } else {
         $("#loginError").hidden = false;
         $("#pin").value = "";
@@ -858,8 +942,7 @@
       window.ArenasCloud.signIn(email, password)
         .then(function () {
           $("#cloudPassword").value = "";
-          renderCloud();
-          loadCloud(false);
+          afterSignIn();
           toast("Conectado a Supabase");
         })
         .catch(function (error) {
@@ -875,7 +958,64 @@
       window.ArenasCloud.signOut();
       renderCloud();
       setCloudStatus("Sesión cerrada. Los cambios quedan solo en este navegador.");
+      updateBar();
     });
+
+    var publishAction = $("#publishAction");
+    if (publishAction) {
+      publishAction.addEventListener("click", function () {
+        if (!window.ArenasCloud || !window.ArenasCloud.enabled()) return;
+        if (!window.ArenasCloud.session() || offline) {
+          showConnect();
+          return;
+        }
+        publishNow(false);
+      });
+    }
+
+    var connectForm = $("#connectForm");
+    if (connectForm) {
+      connectForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+        var email = $("#connectEmail").value.trim();
+        var password = $("#connectPassword").value;
+        var error = $("#connectError");
+        if (!email || !password) {
+          error.textContent = "Escribe el correo y la contraseña de la cuenta del menú.";
+          error.hidden = false;
+          return;
+        }
+        error.hidden = true;
+        setBar("busy", "Entrando a Supabase…", "");
+        window.ArenasCloud.signIn(email, password)
+          .then(function () {
+            $("#connectPassword").value = "";
+            $("#connectScreen").hidden = true;
+            /* Evita que showApp() baje el menú de la nube y pise los cambios
+               que se hicieron sin sesión; afterSignIn decide qué hacer. */
+            cloudLoaded = true;
+            showApp();
+            afterSignIn();
+            toast("Conectado a Supabase");
+          })
+          .catch(function (err) {
+            error.textContent = err.message || "No se pudo entrar a la nube.";
+            error.hidden = false;
+            setBar("err", "Sin conexión: los cambios no se publican.", "Entrar");
+          });
+      });
+    }
+
+    var offlineBtn = $("#offlineModeBtn");
+    if (offlineBtn) {
+      offlineBtn.addEventListener("click", function () {
+        if (!window.confirm("Sin sesión, los cambios NO llegan a los demás teléfonos. ¿Seguir igual?")) return;
+        offline = true;
+        $("#connectScreen").hidden = true;
+        showApp();
+        scheduleCloudSave();
+      });
+    }
 
     $("#exportBtn").addEventListener("click", exportData);
     $("#importInput").addEventListener("change", function (event) {
