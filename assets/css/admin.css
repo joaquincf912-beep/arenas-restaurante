@@ -1105,6 +1105,10 @@ dialog::backdrop {
   color: var(--muted);
 }
 
+.publish-bar[hidden] {
+  display: none;
+}
+
 .publish-dot {
   width: 9px;
   height: 9px;

@@ -13,8 +13,8 @@
   var cloudLoaded = false;
   /* Hay cambios hechos en este dispositivo que todavía no están en la nube. */
   var dirty = false;
-  /* El dueño eligió editar sin sesión: se avisa en grande y no se publica. */
-  var offline = false;
+  var barTimer = null;
+  var retryTimer = null;
 
   var $ = function (selector, root) {
     return (root || document).querySelector(selector);
@@ -52,8 +52,10 @@
     return true;
   }
 
-  /* ---------------- Barra de estado de publicación ---------------- */
-  function setBar(kind, message, actionLabel) {
+  /* ---------------- Aviso de guardado ----------------
+     La barra no estorba: aparece un instante en verde al guardar y se
+     queda en rojo solo si la nube no responde (con reintento solo). */
+  function paintBar(kind, message, actionLabel) {
     var bar = $("#publishBar");
     var text = $("#publishText");
     var action = $("#publishAction");
@@ -68,20 +70,37 @@
     }
   }
 
+  function flashBar(message) {
+    var bar = $("#publishBar");
+    paintBar("ok", message, "");
+    if (!bar) return;
+    clearTimeout(barTimer);
+    bar.hidden = false;
+    barTimer = setTimeout(function () {
+      bar.hidden = true;
+    }, 2600);
+  }
+
+  function alertBar(message, actionLabel) {
+    var bar = $("#publishBar");
+    paintBar("err", message, actionLabel);
+    if (!bar) return;
+    clearTimeout(barTimer);
+    bar.hidden = false;
+  }
+
+  function hideBar() {
+    var bar = $("#publishBar");
+    clearTimeout(barTimer);
+    if (bar) bar.hidden = true;
+  }
+
   function updateBar() {
-    if (offline) {
-      setBar("err", "Modo sin conexión: los cambios NO salen de este teléfono.", "Entrar");
-      return;
-    }
     if (!window.ArenasCloud || !window.ArenasCloud.enabled()) {
-      setBar("err", "Supabase no está configurado en este sitio: los cambios no se publican.", "");
+      alertBar("Sin conexión con la nube: los cambios quedan solo en este teléfono.", "Reintentar");
       return;
     }
-    if (!window.ArenasCloud.session()) {
-      setBar("warn", "Sin sesión de Supabase: los cambios NO salen de este teléfono.", "Entrar");
-      return;
-    }
-    setBar("ok", "Conectado con Supabase · todo lo que edites se publica en todos los teléfonos.", "");
+    hideBar();
   }
 
   /* ---------------- Sincronización con Supabase ---------------- */
@@ -98,18 +117,10 @@
 
   function renderCloud() {
     if (!cloudEnabled()) {
-      setCloudStatus("Supabase no está configurado en este sitio.", "error");
-      $("#cloudForm").hidden = true;
-      $("#cloudPublish").hidden = true;
+      setCloudStatus("La nube no está configurada en este sitio: los cambios quedan solo aquí.", "error");
       return;
     }
-    var session = window.ArenasCloud.session();
-    var logged = Boolean(session && session.access_token);
-    $("#cloudForm").hidden = logged;
-    $("#cloudLogout").hidden = !logged;
-    $("#cloudPublish").hidden = !logged;
-    if (logged) setCloudStatus("Conectado como " + (session.email || "administrador") + ".", "ok");
-    else setCloudStatus("Sin sesión. Entra para publicar los cambios en todos los dispositivos.");
+    setCloudStatus("Sincronización automática · cada cambio se publica solo.", "ok");
   }
 
   /* Publica el menú completo en Supabase. Es lo mismo que ocurre solo
@@ -117,16 +128,8 @@
   var publishing = null;
   var publishQueued = false;
 
-  function publishNow(quiet) {
+  function publishNow() {
     if (!cloudEnabled()) return Promise.reject(new Error("Supabase no está configurado en este sitio."));
-
-    if (!window.ArenasCloud.session()) {
-      setCloudStatus(
-        "Cambios guardados solo en este navegador. Entra con tu cuenta de Supabase para publicarlos en todos los dispositivos.",
-        "error"
-      );
-      return Promise.reject(new Error("Sin sesión de Supabase."));
-    }
 
     if (publishing) {
       /* Ya hay una publicación en curso: al terminar se envía la última
@@ -135,31 +138,31 @@
       return publishing;
     }
 
-    setCloudStatus("Publicando el menú en la nube…");
-    setBar("busy", "Publicando en Supabase…", "");
+    clearTimeout(retryTimer);
+    retryTimer = null;
+
     publishing = window.ArenasCloud.save(state)
       .then(function () {
         dirty = false;
         var stamp = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" });
-        setCloudStatus("Publicado a las " + stamp + " · ya se ve en todos los dispositivos.", "ok");
-        setBar("ok", "Publicado a las " + stamp + " · ya se ve en todos los teléfonos.", "");
-        if (!quiet) toast("Menú publicado en la nube");
+        setCloudStatus("Todo guardado · última publicación " + stamp + ".", "ok");
+        flashBar("Guardado · ya se ve en todos los teléfonos");
         if (window.ArenasCloud.notifyChange) window.ArenasCloud.notifyChange();
       })
       .catch(function (error) {
-        var message = error.message || "No se pudo publicar en la nube.";
-        setCloudStatus(message + " Los cambios quedaron solo en este navegador.", "error");
-        setBar(
-          "err",
-          "NO publicado: " + message + " El cambio quedó solo en este teléfono.",
-          window.ArenasCloud.session() ? "Reintentar" : "Entrar"
-        );
+        var message = error.message || "No se pudo guardar en la nube.";
+        setCloudStatus("Sin publicar: " + message, "error");
+        alertBar("No se pudo guardar en la nube. Reintentando…", "Reintentar");
+        retryTimer = setTimeout(function () {
+          retryTimer = null;
+          publishNow();
+        }, 8000);
       })
       .then(function () {
         publishing = null;
         if (publishQueued) {
           publishQueued = false;
-          publishNow(true);
+          publishNow();
         }
       });
 
@@ -168,25 +171,10 @@
 
   function scheduleCloudSave() {
     if (!cloudEnabled()) return;
-
-    if (!window.ArenasCloud.session() || offline) {
-      setCloudStatus(
-        "Cambios guardados solo en este navegador. Entra con tu cuenta de Supabase para publicarlos en todos los dispositivos.",
-        "error"
-      );
-      updateBar();
-      /* Aviso después del toast de "guardado" de cada acción. */
-      clearTimeout(persist.warnTimer);
-      persist.warnTimer = setTimeout(function () {
-        toast("SIN PUBLICAR · el cambio quedó solo en este teléfono");
-      }, 140);
-      return;
-    }
-
     clearTimeout(cloudTimer);
     cloudTimer = setTimeout(function () {
-      publishNow(true);
-    }, 900);
+      publishNow();
+    }, 700);
   }
 
   function applyRemote(result, quiet) {
@@ -202,20 +190,17 @@
     setCloudStatus("Cargando menú desde Supabase…");
     window.ArenasCloud.load()
       .then(function (result) {
-        if (result && result.state) {
+        if (result && result.state && !dirty) {
           applyRemote(result, quiet);
-          if (!window.ArenasCloud.session()) setCloudStatus("Menú leído desde Supabase. Entra para editarlo.", "ok");
-        } else if (window.ArenasCloud.session()) {
+        } else if (!result || !result.state) {
           /* Primer guardado: solo se publica si se confirmó que la nube está
              vacía, para no pisar un menú existente por un fallo de lectura. */
           window.ArenasCloud.revision().then(function (rev) {
-            if (rev === "__none__") publishNow(true);
+            if (rev === "__none__") publishNow();
             else if (rev === null) {
-              setCloudStatus("No se pudo comprobar la nube. Revisa la conexión o pulsa «Publicar ahora».", "error");
+              setCloudStatus("No se pudo comprobar la nube. Se reintentará solo.", "error");
             }
           });
-        } else {
-          setCloudStatus("Aún no hay un menú publicado en la nube.");
         }
       })
       .catch(function (error) {
@@ -242,14 +227,12 @@
   /* ---------------- Sesión ---------------- */
   function showApp() {
     $("#loginScreen").hidden = true;
-    var connect = $("#connectScreen");
-    if (connect) connect.hidden = true;
     $("#app").hidden = false;
     $("#logoutBtn").hidden = false;
     renderAll();
     renderCloud();
-    updateBar();
-    if (!cloudLoaded && !offline) {
+    hideBar();
+    if (!cloudLoaded) {
       cloudLoaded = true;
       loadCloud(true);
     }
@@ -259,35 +242,6 @@
     $("#loginScreen").hidden = false;
     $("#app").hidden = true;
     $("#logoutBtn").hidden = true;
-  }
-
-  /* Pantalla obligatoria antes de editar cuando no hay sesión de Supabase. */
-  function showConnect() {
-    var email = $("#connectEmail");
-    if (email && !email.value) {
-      var session = window.ArenasCloud && window.ArenasCloud.session();
-      if (session && session.email) email.value = session.email;
-    }
-    $("#loginScreen").hidden = true;
-    $("#app").hidden = true;
-    $("#logoutBtn").hidden = true;
-    $("#connectScreen").hidden = false;
-    var error = $("#connectError");
-    if (error) error.hidden = true;
-    if (email) email.focus();
-  }
-
-  function afterSignIn() {
-    offline = false;
-    renderCloud();
-    if (dirty) {
-      /* Había cambios sin publicar: se suben los de este dispositivo. */
-      publishNow(false);
-    } else {
-      cloudLoaded = true;
-      loadCloud(false);
-    }
-    updateBar();
   }
 
   /* ---------------- Estadísticas ---------------- */
@@ -691,11 +645,7 @@
         }
         $("#loginError").hidden = true;
         $("#pin").value = "";
-        if (window.ArenasCloud && window.ArenasCloud.enabled() && !window.ArenasCloud.session()) {
-          showConnect();
-        } else {
-          showApp();
-        }
+        showApp();
       } else {
         $("#loginError").hidden = false;
         $("#pin").value = "";
@@ -929,91 +879,10 @@
       renderSettings();
     });
 
-    $("#cloudForm").addEventListener("submit", function (event) {
-      event.preventDefault();
-      if (!cloudEnabled()) return;
-      var email = $("#cloudEmail").value.trim();
-      var password = $("#cloudPassword").value;
-      if (!email || !password) {
-        setCloudStatus("Escribe el correo y la contraseña de Supabase.", "error");
-        return;
-      }
-      setCloudStatus("Entrando a la nube…");
-      window.ArenasCloud.signIn(email, password)
-        .then(function () {
-          $("#cloudPassword").value = "";
-          afterSignIn();
-          toast("Conectado a Supabase");
-        })
-        .catch(function (error) {
-          setCloudStatus(error.message || "No se pudo entrar a la nube.", "error");
-        });
-    });
-
-    $("#cloudPublish").addEventListener("click", function () {
-      publishNow(false);
-    });
-
-    $("#cloudLogout").addEventListener("click", function () {
-      window.ArenasCloud.signOut();
-      renderCloud();
-      setCloudStatus("Sesión cerrada. Los cambios quedan solo en este navegador.");
-      updateBar();
-    });
-
     var publishAction = $("#publishAction");
     if (publishAction) {
       publishAction.addEventListener("click", function () {
-        if (!window.ArenasCloud || !window.ArenasCloud.enabled()) return;
-        if (!window.ArenasCloud.session() || offline) {
-          showConnect();
-          return;
-        }
-        publishNow(false);
-      });
-    }
-
-    var connectForm = $("#connectForm");
-    if (connectForm) {
-      connectForm.addEventListener("submit", function (event) {
-        event.preventDefault();
-        var email = $("#connectEmail").value.trim();
-        var password = $("#connectPassword").value;
-        var error = $("#connectError");
-        if (!email || !password) {
-          error.textContent = "Escribe el correo y la contraseña de la cuenta del menú.";
-          error.hidden = false;
-          return;
-        }
-        error.hidden = true;
-        setBar("busy", "Entrando a Supabase…", "");
-        window.ArenasCloud.signIn(email, password)
-          .then(function () {
-            $("#connectPassword").value = "";
-            $("#connectScreen").hidden = true;
-            /* Evita que showApp() baje el menú de la nube y pise los cambios
-               que se hicieron sin sesión; afterSignIn decide qué hacer. */
-            cloudLoaded = true;
-            showApp();
-            afterSignIn();
-            toast("Conectado a Supabase");
-          })
-          .catch(function (err) {
-            error.textContent = err.message || "No se pudo entrar a la nube.";
-            error.hidden = false;
-            setBar("err", "Sin conexión: los cambios no se publican.", "Entrar");
-          });
-      });
-    }
-
-    var offlineBtn = $("#offlineModeBtn");
-    if (offlineBtn) {
-      offlineBtn.addEventListener("click", function () {
-        if (!window.confirm("Sin sesión, los cambios NO llegan a los demás teléfonos. ¿Seguir igual?")) return;
-        offline = true;
-        $("#connectScreen").hidden = true;
-        showApp();
-        scheduleCloudSave();
+        publishNow();
       });
     }
 

@@ -25,7 +25,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
     <noscript><link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" /></noscript>
     <link rel="stylesheet" href="assets/css/styles.css?v=5" />
-    <link rel="stylesheet" href="assets/css/admin.css?v=6" />
+    <link rel="stylesheet" href="assets/css/admin.css?v=7" />
   </head>
   <body class="admin">
     <header class="admin-header">
@@ -71,42 +71,19 @@
           <button class="btn btn-primary" type="submit">Entrar al panel</button>
 
           <p class="login-note">
-            El PIN abre el panel. Después se pide la cuenta de Supabase: sin esa conexión los cambios
-            no salen de este teléfono.
+            El PIN abre el panel. Todo lo que edites se guarda solo y aparece en el menú de todos los
+            teléfonos en segundos.
           </p>
-        </form>
-      </section>
-
-      <!-- Conexión con Supabase -->
-      <section class="login-screen" id="connectScreen" hidden>
-        <form class="login-card" id="connectForm">
-          <span class="login-mark">A</span>
-          <h1>Conecta tu cuenta</h1>
-          <p>
-            Para que un cambio llegue a todos los teléfonos tiene que publicarse en la nube. Entra
-            con la cuenta de Supabase del menú.
-          </p>
-
-          <label for="connectEmail">Correo</label>
-          <input id="connectEmail" type="email" autocomplete="username" placeholder="Correo de Supabase" />
-          <label for="connectPassword">Contraseña</label>
-          <input id="connectPassword" type="password" autocomplete="current-password" placeholder="••••••••" />
-          <p class="login-error" id="connectError" role="alert" hidden></p>
-
-          <button class="btn btn-primary" type="submit">Entrar y publicar</button>
-          <button class="btn btn-ghost btn-sm" id="offlineModeBtn" type="button">
-            Editar sin conexión (solo este teléfono)
-          </button>
         </form>
       </section>
 
       <!-- Panel -->
       <section class="app" id="app" hidden>
         <div class="wrap">
-          <div class="publish-bar" id="publishBar" data-state="busy" role="status" aria-live="polite">
+          <div class="publish-bar" id="publishBar" data-state="ok" role="status" aria-live="polite" hidden>
             <span class="publish-dot" aria-hidden="true"></span>
-            <span class="publish-text" id="publishText">Comprobando la conexión…</span>
-            <button class="btn btn-sm publish-action" id="publishAction" type="button" hidden>Entrar</button>
+            <span class="publish-text" id="publishText">Guardado</span>
+            <button class="btn btn-sm publish-action" id="publishAction" type="button" hidden>Reintentar</button>
           </div>
 
           <div class="app-head">
@@ -114,8 +91,8 @@
               <p class="eyebrow">Arenas, C.A · J501472530</p>
               <h1>Administración del menú</h1>
               <p class="app-sub">
-                Edita precios, fotos, disponibilidad y horarios. Con Supabase conectado, los cambios
-                se publican de inmediato en el menú de todos los dispositivos.
+                Edita precios, fotos, disponibilidad y horarios. Cada cambio se publica al instante
+                en el menú de todos los dispositivos.
               </p>
               <span class="local-badge" id="localBadge" hidden>
                 <span class="dot" aria-hidden="true"></span>
@@ -229,22 +206,13 @@
 
             <div class="data-card cloud-card">
               <div>
-                <h3>Sincronización en la nube</h3>
+                <h3>Sincronización automática</h3>
                 <p>
-                  Conéctate con tu cuenta de Supabase para publicar los cambios en el menú de todos
-                  los dispositivos al instante. Sin conexión, los cambios quedan guardados en este navegador.
+                  No hay nada que conectar ni cuenta que entrar: cada cambio que hagas aquí se guarda
+                  solo en la nube y aparece en el menú de todos los teléfonos en segundos.
                 </p>
                 <p class="cloud-status" id="cloudStatus">Comprobando conexión…</p>
               </div>
-              <form class="cloud-form" id="cloudForm">
-                <input id="cloudEmail" type="email" placeholder="Correo de Supabase" autocomplete="username" />
-                <input id="cloudPassword" type="password" placeholder="Contraseña" autocomplete="current-password" />
-                <button class="btn btn-primary btn-sm" type="submit">Entrar a la nube</button>
-                <button class="btn btn-ghost btn-sm" id="cloudLogout" type="button" hidden>Salir</button>
-              </form>
-              <button class="btn btn-primary btn-sm" id="cloudPublish" type="button" hidden>
-                Publicar ahora
-              </button>
             </div>
 
             <div class="data-card">
@@ -357,7 +325,7 @@
     <script src="assets/js/config.js?v=1" defer></script>
     <script src="assets/js/data.js?v=3" defer></script>
     <script src="assets/js/store.js?v=2" defer></script>
-    <script src="assets/js/cloud.js?v=6" defer></script>
-    <script src="assets/js/admin.js?v=8" defer></script>
+    <script src="assets/js/cloud.js?v=7" defer></script>
+    <script src="assets/js/admin.js?v=9" defer></script>
   </body>
 </html>

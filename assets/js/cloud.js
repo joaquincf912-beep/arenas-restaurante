@@ -240,12 +240,24 @@
     }
   }
 
+  /* Escritura con la clave pública. La política de la tabla solo permite
+     tocar la fila __menu_state__ (el menú de domicilios), así el panel
+     guarda solo en cualquier teléfono sin cuenta ni contraseña. */
   function save(state) {
     if (!enabled()) return Promise.reject(new Error("Supabase no está configurado."));
-    return rest("menu_prices?on_conflict=key", {
+    return fetch(base + "/rest/v1/menu_prices?on_conflict=key", {
       method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      body: [{ key: MENU_KEY, price: null, options: { state: state } }]
+      headers: {
+        apikey: anon,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal"
+      },
+      body: JSON.stringify([{ key: MENU_KEY, price: null, options: { state: state } }])
+    }).then(function (res) {
+      if (res.ok) return null;
+      return res.text().then(function (text) {
+        throw new Error("Supabase (" + res.status + "): " + text.slice(0, 160));
+      });
     });
   }
 
