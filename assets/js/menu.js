@@ -778,9 +778,25 @@
 
   /* ---------------- Sincronización en vivo con Supabase ---------------- */
   var cloudUpdatedAt = "";
+  var pulling = null;
+  var REVISION_MS = 5000;
+
+  function openCategories() {
+    return Array.prototype.map.call(
+      els.sections.querySelectorAll(".course:not(.is-collapsed)"),
+      function (node) {
+        return node.dataset.cat;
+      }
+    );
+  }
 
   function applyCloudState(next) {
     if (!next || !next.business || !Array.isArray(next.products)) return;
+    /* Se conserva la posición de lectura y las secciones abiertas: si el
+       dueño cambia un precio mientras alguien está mirando, la carta se
+       actualiza sin saltar de sitio. */
+    var scroll = window.scrollY;
+    var open = openCategories();
     state = next;
     Store.save(state);
     initLinks();
@@ -788,29 +804,51 @@
     renderSignature();
     renderChips();
     renderSections(els.search.value || "");
+    open.forEach(function (catId) {
+      setCourseOpen(document.getElementById("cat-" + catId), true);
+    });
     renderCart();
+    if (window.scrollY !== scroll) window.scrollTo(0, scroll);
   }
 
-  function pullCloud() {
-    if (!window.ArenasCloud || !window.ArenasCloud.enabled()) return;
-    window.ArenasCloud.load().then(function (result) {
-      if (!result || !result.state) return;
-      if (result.updatedAt && result.updatedAt === cloudUpdatedAt) return;
-      cloudUpdatedAt = result.updatedAt || "";
-      applyCloudState(result.state);
-    });
+  function pullCloud(force) {
+    if (!window.ArenasCloud || !window.ArenasCloud.enabled()) return Promise.resolve();
+    if (pulling) return pulling;
+    pulling = window.ArenasCloud.load()
+      .then(function (result) {
+        pulling = null;
+        if (!result || !result.state) return;
+        if (!force && result.updatedAt && result.updatedAt === cloudUpdatedAt) return;
+        cloudUpdatedAt = result.updatedAt || "";
+        applyCloudState(result.state);
+      })
+      .catch(function () {
+        pulling = null;
+      });
+    return pulling;
   }
 
   /* Cada pocos segundos se pregunta solo por la marca de tiempo (unos
      pocos bytes). El menú completo se descarga únicamente si cambió. */
   function syncCloud() {
+    if (document.hidden) return;
     if (!window.ArenasCloud || !window.ArenasCloud.enabled()) return;
     if (!cloudUpdatedAt) {
-      pullCloud();
+      pullCloud(true);
       return;
     }
     window.ArenasCloud.revision().then(function (rev) {
-      if (rev && rev !== "__none__" && rev !== cloudUpdatedAt) pullCloud();
+      if (rev && rev !== "__none__" && rev !== cloudUpdatedAt) pullCloud(true);
+    });
+  }
+
+  /* Aviso inmediato cuando el panel de administración publica desde el
+     mismo dispositivo: la carta abierta se entera al instante, sin
+     esperar el sondeo. */
+  function listenLive() {
+    if (!window.ArenasCloud || !window.ArenasCloud.enabled()) return;
+    window.ArenasCloud.onChange(function () {
+      pullCloud(true);
     });
   }
 
@@ -826,9 +864,13 @@
   setupScrollSpy();
   pullCloud();
 
+  listenLive();
+
   window.setInterval(renderStatus, 60 * 1000);
-  window.setInterval(syncCloud, 15 * 1000);
+  window.setInterval(syncCloud, REVISION_MS);
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) syncCloud();
   });
+  window.addEventListener("focus", syncCloud);
+  window.addEventListener("online", syncCloud);
 })();

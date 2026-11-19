@@ -78,6 +78,7 @@
   /* Publica el menú completo en Supabase. Es lo mismo que ocurre solo
      después de cada cambio, pero aquí se puede forzar a mano. */
   var publishing = null;
+  var publishQueued = false;
 
   function publishNow(quiet) {
     if (!cloudEnabled()) return Promise.reject(new Error("Supabase no está configurado en este sitio."));
@@ -90,7 +91,12 @@
       return Promise.reject(new Error("Sin sesión de Supabase."));
     }
 
-    if (publishing) return publishing;
+    if (publishing) {
+      /* Ya hay una publicación en curso: al terminar se envía la última
+         versión, así ningún cambio reciente se queda sin subir. */
+      publishQueued = true;
+      return publishing;
+    }
 
     setCloudStatus("Publicando el menú en la nube…");
     publishing = window.ArenasCloud.save(state)
@@ -98,6 +104,7 @@
         var stamp = new Date().toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" });
         setCloudStatus("Publicado a las " + stamp + " · ya se ve en todos los dispositivos.", "ok");
         if (!quiet) toast("Menú publicado en la nube");
+        if (window.ArenasCloud.notifyChange) window.ArenasCloud.notifyChange();
       })
       .catch(function (error) {
         setCloudStatus(
@@ -108,6 +115,10 @@
       })
       .then(function () {
         publishing = null;
+        if (publishQueued) {
+          publishQueued = false;
+          publishNow(true);
+        }
       });
 
     return publishing;

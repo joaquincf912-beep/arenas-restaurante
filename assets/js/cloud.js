@@ -169,6 +169,70 @@
       });
   }
 
+  /* Canal de avisos para las demás pestañas del mismo dispositivo:
+     cuando el panel publica un cambio, la carta abierta se refresca al
+     instante en vez de esperar el siguiente sondeo. */
+  var CHANNEL = "arenas-menu-live";
+  var channel = null;
+  var listeners = [];
+
+  function bus() {
+    if (channel !== null) return channel;
+    try {
+      channel = "BroadcastChannel" in window ? new BroadcastChannel(CHANNEL) : false;
+    } catch (err) {
+      channel = false;
+    }
+    if (channel) {
+      channel.onmessage = function () {
+        listeners.forEach(function (fn) {
+          try {
+            fn();
+          } catch (err) {
+            /* un oyente falló, los demás siguen */
+          }
+        });
+      };
+    }
+    return channel;
+  }
+
+  function onChange(fn) {
+    if (typeof fn !== "function") return;
+    listeners.push(fn);
+    bus();
+    /* Respaldo para navegadores sin BroadcastChannel. */
+    if (listeners.length === 1) {
+      window.addEventListener("storage", function (event) {
+        if (event.key !== CHANNEL + ":stamp") return;
+        listeners.forEach(function (item) {
+          try {
+            item();
+          } catch (err) {
+            /* ignorado */
+          }
+        });
+      });
+    }
+  }
+
+  function notifyChange() {
+    var stamp = String(Date.now());
+    var busChannel = bus();
+    if (busChannel) {
+      try {
+        busChannel.postMessage({ at: stamp });
+      } catch (err) {
+        /* sin canal disponible */
+      }
+    }
+    try {
+      localStorage.setItem(CHANNEL + ":stamp", stamp);
+    } catch (err) {
+      /* almacenamiento no disponible */
+    }
+  }
+
   function save(state) {
     if (!enabled()) return Promise.reject(new Error("Supabase no está configurado."));
     return rest("menu_prices?on_conflict=key", {
@@ -185,6 +249,8 @@
     save: save,
     signIn: signIn,
     signOut: signOut,
+    notifyChange: notifyChange,
+    onChange: onChange,
     session: function () {
       return session;
     }
