@@ -11,7 +11,7 @@ window.ARENAS_MENU = {
     legal: "Arenas, C.A",
     rif: "J501472530",
     tagline: "Para cada gusto, cada sabor",
-    whatsapp: "584149535760",
+    whatsapp: "584220525893",
     instagram: "https://www.instagram.com/arenas_grill_bar/",
     pin: "1987"
   },
